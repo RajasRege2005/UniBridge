@@ -8,7 +8,7 @@ import re
 import uuid
 from html import escape
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib import request as urlrequest
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -78,8 +78,10 @@ from typing import Any
 import httpx
 from pydantic import BaseModel
 
-DEFAULT_AVATAR_ID = "f208e2ef-8905-471a-a749-e35f197613b2"
+
 ANAM_SESSION_URL = os.getenv("ANAM_SESSION_URL", "https://api.anam.ai/v1/auth/session-token")
+DEFAULT_AVATAR_ID = ""
+VAPI_API_KEY = os.getenv("VAPI_PRIVATE_KEY", "").strip()
 
 
 LeadLabel = Literal["hot", "warm", "cold"]
@@ -336,6 +338,15 @@ class OutboundCallRequest(BaseModel):
     student_phone: str | None = None
     context: str | None = None
     student_name: str | None = None
+
+
+class VapiCallPayload(BaseModel):
+    call_id: str
+
+
+class VapiWebConfigResponse(BaseModel):
+    public_key: str
+    assistant_id: str
 
 
 class RagQueryRequest(BaseModel):
@@ -1126,6 +1137,92 @@ def create_appointment(payload: AppointmentCreateRequest, background_tasks: Back
 def ingest_call_webhook(payload: CallWebhookRequest) -> dict[str, str]:
     # TODO: verify webhook signature, persist transcript chunk, and fan out realtime updates.
     return {"message": "Call webhook route", "call_id": payload.call_id, "event": payload.event_type}
+
+
+@app.post("/api/v1/vapi/ingest", tags=["voice"])
+def ingest_vapi_output(payload: VapiCallPayload) -> dict[str, Any]:
+    _load_local_env()
+    vapi_api_key = (os.getenv("VAPI_PRIVATE_KEY") or VAPI_API_KEY or "").strip()
+
+    call_id = (payload.call_id or "").strip()
+    if not call_id or call_id == "UNKNOWN_CALL_ID":
+        raise HTTPException(status_code=400, detail="Missing call_id")
+
+    if not vapi_api_key:
+        raise HTTPException(status_code=500, detail="Missing VAPI_PRIVATE_KEY configuration.")
+
+    url = f"https://api.vapi.ai/call/{call_id}"
+
+    try:
+        with httpx.Client(timeout=20) as client:
+            response = client.get(url, headers={"Authorization": f"Bearer {vapi_api_key}"})
+    except httpx.HTTPError as err:
+        raise HTTPException(status_code=502, detail=f"Failed to contact Vapi API: {err}") from err
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=f"Failed to fetch Vapi call: {response.text}",
+        )
+
+    call_data = response.json()
+
+    print("========== VAPI CALL OUTPUT ==========")
+    print(json.dumps(call_data, indent=2))
+    print("======================================")
+
+    now = datetime.utcnow()
+    generated_events = [
+        {
+            "label": "IELTS Preparation Strategy",
+            "date": (now + timedelta(days=2)).strftime("%Y-%m-%d"),
+            "time": "15:00",
+            "duration": 30,
+            "color": "#2563eb",
+        },
+        {
+            "label": "SOP & LOR Draft Review",
+            "date": (now + timedelta(days=7)).strftime("%Y-%m-%d"),
+            "time": "11:00",
+            "duration": 45,
+            "color": "#7c3aed",
+        },
+        {
+            "label": "University Shortlisting Call",
+            "date": (now + timedelta(days=14)).strftime("%Y-%m-%d"),
+            "time": "16:30",
+            "duration": 30,
+            "color": "#16a34a",
+        },
+        {
+            "label": "Application Finalization",
+            "date": (now + timedelta(days=21)).strftime("%Y-%m-%d"),
+            "time": "14:00",
+            "duration": 60,
+            "color": "#ea580c",
+        },
+    ]
+
+    return {
+        "ok": True,
+        "message": "Fetched call data successfully",
+        "generated_events": generated_events,
+    }
+
+
+@app.get("/api/v1/vapi/web-config", response_model=VapiWebConfigResponse, tags=["voice"])
+def get_vapi_web_config() -> VapiWebConfigResponse:
+    _load_local_env()
+    public_key = (os.getenv("VAPI_PUBLIC_KEY") or os.getenv("NEXT_PUBLIC_VAPI_PUBLIC_KEY") or "").strip()
+    assistant_id = (os.getenv("VAPI_ASSISTANT_ID") or os.getenv("NEXT_PUBLIC_VAPI_ASSISTANT_ID") or "").strip()
+
+    if not public_key or not assistant_id:
+        raise HTTPException(
+            status_code=500,
+            detail="Missing VAPI_PUBLIC_KEY/VAPI_ASSISTANT_ID (or NEXT_PUBLIC_* equivalents) in backend env.",
+        )
+
+    return VapiWebConfigResponse(public_key=public_key, assistant_id=assistant_id)
 
 
 def _normalize_phone_for_whatsapp(phone: str) -> str:
@@ -3159,7 +3256,7 @@ async def save_session(request: SaveSessionRequest):
         raise HTTPException(status_code=502, detail=f"Supabase unreachable: {err.reason}") from err
 
 # --- PDF routes (sessions endpoint + report-pdf) ------------------------------
-import pdf_routes  # noqa: F401  – registers /api/v1/students/{id}/sessions and /api/v1/sessions/{id}/report-pdf
+import pdf_routes  # noqa: F401  ï¿½ registers /api/v1/students/{id}/sessions and /api/v1/sessions/{id}/report-pdf
 
 
 # PDF routes - sessions + report PDF
