@@ -205,6 +205,24 @@ export default function AdminSidebar() {
             {displayEmail}
           </p>
         </div>
+        <button
+          onClick={() => {
+            window.localStorage.removeItem("oauth_access_token");
+            window.localStorage.removeItem("oauth_profile");
+            window.location.href = "/";
+          }}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: '4px',
+            color: '#94a3b8',
+            display: 'flex',
+            alignItems: 'center',
+          }}
+        >
+          <LogOut size={15} />
+        </button>
       </div>
     </aside>
   );

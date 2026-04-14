@@ -206,6 +206,11 @@ export default function Sidebar() {
           </p>
         </div>
         <button
+          onClick={() => {
+            window.localStorage.removeItem("oauth_access_token");
+            window.localStorage.removeItem("oauth_profile");
+            window.location.href = "/";
+          }}
           style={{
             background: 'none',
             border: 'none',
