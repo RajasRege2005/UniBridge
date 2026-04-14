@@ -958,6 +958,9 @@ def google_callback(
 
     if is_popup_flow and app_origin:
         redirect_path = "/admin/dashboard" if role == "admin" else "/dashboard"
+        if role != "admin" and student_record and not _is_student_onboarding_complete(student_record):
+            redirect_path = "/onboarding"
+            
         if mode == "popup":
             return _popup_response(app_origin, {"type": "google-oauth-success", "accessToken": str(access_token)})
         return RedirectResponse(
@@ -1060,16 +1063,21 @@ def google_auth_callback_compat(
         return RedirectResponse(url=f"{app_origin}/dashboard?error=missing_access_token", status_code=307)
 
     userinfo = _fetch_google_userinfo(access_token)
+    student_record = None
     if role == "admin":
         _sync_admin_on_login(userinfo)
     else:
-        _sync_student_on_login(userinfo)
+        student_record = _sync_student_on_login(userinfo)
 
     if mode == "popup":
         return _popup_response(app_origin, {"type": "google-oauth-success", "accessToken": access_token})
 
+    redirect_path = '/admin/dashboard' if role == 'admin' else '/dashboard'
+    if role != 'admin' and student_record and not _is_student_onboarding_complete(student_record):
+        redirect_path = "/onboarding"
+
     return RedirectResponse(
-        url=f"{app_origin}{'/admin/dashboard' if role == 'admin' else '/dashboard'}?access_token={access_token}",
+        url=f"{app_origin}{redirect_path}?access_token={access_token}",
         status_code=307,
     )
 
