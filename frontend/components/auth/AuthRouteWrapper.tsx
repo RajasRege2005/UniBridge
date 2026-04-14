@@ -13,7 +13,20 @@ export default function AuthRouteWrapper({ children }: { children: React.ReactNo
   const isOnboarding = pathname === '/onboarding';
 
   useEffect(() => {
-    if (isHome || isOnboarding || loading) {
+    if (loading) {
+      return;
+    }
+
+    if (isAuthenticated && isHome) {
+      if (needsOnboarding) {
+        router.replace('/onboarding');
+      } else {
+        router.replace('/dashboard');
+      }
+      return;
+    }
+
+    if (isHome) {
       return;
     }
 
@@ -32,7 +45,7 @@ export default function AuthRouteWrapper({ children }: { children: React.ReactNo
     }
   }, [isHome, isOnboarding, loading, isAuthenticated, needsOnboarding, router]);
 
-  if (isHome || isOnboarding) {
+  if (isHome) {
     return <>{children}</>;
   }
 
